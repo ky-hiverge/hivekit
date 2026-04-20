@@ -39,8 +39,10 @@ def build_experiment_crd(config: HiveConfig, experiment_name: str) -> Dict[str, 
                 "workdir": config.sandbox.workdir,
                 "timeout": config.sandbox.timeout,
                 "resources": {
-                    "cpu": config.sandbox.resources.cpu,
-                    "memory": config.sandbox.resources.memory,
+                    "limits": {
+                        "cpu": config.sandbox.resources.cpu,
+                        "memory": config.sandbox.resources.memory,
+                    },
                 },
             },
         },
@@ -63,18 +65,13 @@ def build_experiment_crd(config: HiveConfig, experiment_name: str) -> Dict[str, 
         experiment["spec"]["sandbox"]["resources"]["shmsize"] = config.sandbox.resources.shmsize
 
     if config.sandbox.resources.extended_resources:
-        experiment["spec"]["sandbox"]["resources"]["extendedResources"] = (
+        experiment["spec"]["sandbox"]["resources"]["limits"].update(
             config.sandbox.resources.extended_resources
         )
 
     if config.sandbox.envs:
         experiment["spec"]["sandbox"]["envs"] = [
             {"name": env.name, "value": env.value} for env in config.sandbox.envs
-        ]
-
-    if config.sandbox.secrets:
-        experiment["spec"]["sandbox"]["secrets"] = [
-            {"name": secret.name, "value": secret.value} for secret in config.sandbox.secrets
         ]
 
     if config.sandbox.setup_script:

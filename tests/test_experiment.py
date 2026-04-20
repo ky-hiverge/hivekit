@@ -46,8 +46,8 @@ class TestBuildExperimentCRD:
         assert result["spec"]["repo"]["source"] == "https://github.com/test/repo.git"
         assert result["spec"]["repo"]["branch"] == "main"
         assert result["spec"]["sandbox"]["timeout"] == 60
-        assert result["spec"]["sandbox"]["resources"]["cpu"] == "1"
-        assert result["spec"]["sandbox"]["resources"]["memory"] == "2Gi"
+        assert result["spec"]["sandbox"]["resources"]["limits"]["cpu"] == "1"
+        assert result["spec"]["sandbox"]["resources"]["limits"]["memory"] == "2Gi"
 
     def test_build_crd_with_runtime_config(self):
         """Test building CRD with custom runtime config."""
@@ -111,13 +111,11 @@ class TestBuildExperimentCRD:
 
         result = build_experiment_crd(config, "test-exp")
 
-        assert result["spec"]["sandbox"]["resources"]["cpu"] == "2"
-        assert result["spec"]["sandbox"]["resources"]["memory"] == "4Gi"
+        assert result["spec"]["sandbox"]["resources"]["limits"]["cpu"] == "2"
+        assert result["spec"]["sandbox"]["resources"]["limits"]["memory"] == "4Gi"
         assert result["spec"]["sandbox"]["resources"]["accelerators"] == "a100:2"
         assert result["spec"]["sandbox"]["resources"]["shmsize"] == "2Gi"
-        assert result["spec"]["sandbox"]["resources"]["extendedResources"] == {
-            "nvidia.com/gpu": "1"
-        }
+        assert result["spec"]["sandbox"]["resources"]["limits"]["nvidia.com/gpu"] == "1"
 
     def test_build_crd_with_sandbox_base_image(self):
         """Test building CRD with sandbox base image configuration."""
@@ -177,27 +175,6 @@ class TestBuildExperimentCRD:
         assert len(result["spec"]["sandbox"]["envs"]) == 2
         assert result["spec"]["sandbox"]["envs"][0] == {"name": "VAR1", "value": "value1"}
         assert result["spec"]["sandbox"]["envs"][1] == {"name": "VAR2", "value": "value2"}
-
-    def test_build_crd_with_sandbox_secrets(self):
-        """Test building CRD with sandbox secrets."""
-        config = HiveConfig(
-            organization_id="test-org",
-            runtime=RuntimeConfig(),
-            repo=RepoConfig(
-                source="https://github.com/test/repo.git",
-                evolve_files_and_ranges="main.py",
-            ),
-            sandbox=SandboxConfig(
-                base_image="custom-image:latest",
-                secrets=[KeyValueSet(name="SECRET_KEY", value="secret_value")],
-            ),
-        )
-        result = build_experiment_crd(config, "test-exp")
-        assert len(result["spec"]["sandbox"]["secrets"]) == 1
-        assert result["spec"]["sandbox"]["secrets"][0] == {
-            "name": "SECRET_KEY",
-            "value": "secret_value",
-        }
 
     def test_build_crd_with_setup_script(self):
         """Test building CRD with setup script."""
@@ -294,6 +271,144 @@ class TestBuildExperimentCRD:
         result = build_experiment_crd(config, "test-exp")
 
         assert result["spec"]["coordinatorConfigName"] == "custom-coordinator"
+
+    def test_build_crd_with_github_token(self):
+        """Test building CRD with GitHub token creates annotations."""
+        config = HiveConfig(
+            organization_id="test-org",
+            runtime=RuntimeConfig(),
+            repo=RepoConfig(
+                source="https://github.com/test/private-repo.git",
+                evolve_files_and_ranges="main.py",
+                github_token="ghp_test_token_123",
+            ),
+            sandbox=SandboxConfig(base_image="custom-image:latest"),
+        )
+
+        result = build_experiment_crd(config, "test-exp")
+
+        assert "annotations" in result["metadata"]
+        assert result["metadata"]["annotations"]["github.com/token"] == "ghp_test_token_123"
+
+    def test_build_crd_without_github_token(self):
+        """Test building CRD without GitHub token has no annotations."""
+        config = HiveConfig(
+            organization_id="test-org",
+            runtime=RuntimeConfig(),
+            repo=RepoConfig(
+                source="https://github.com/test/repo.git",
+                evolve_files_and_ranges="main.py",
+            ),
+            sandbox=SandboxConfig(base_image="custom-image:latest"),
+        )
+
+        result = build_experiment_crd(config, "test-exp")
+
+        assert "annotations" not in result["metadata"]
+
+    def test_build_crd_resources_limits_structure(self):
+        """Test that resources are properly nested under limits."""
+        config = HiveConfig(
+            organization_id="test-org",
+            runtime=RuntimeConfig(),
+            repo=RepoConfig(
+                source="https://github.com/test/repo.git",
+                evolve_files_and_ranges="main.py",
+            ),
+            sandbox=SandboxConfig(
+                base_image="custom-image:latest",
+                resources=ResourceConfig(cpu="4", memory="8Gi"),
+            ),
+        )
+
+        result = build_experiment_crd(config, "test-exp")
+
+        assert "limits" in result["spec"]["sandbox"]["resources"]
+        assert result["spec"]["sandbox"]["resources"]["limits"]["cpu"] == "4"
+        assert result["spec"]["sandbox"]["resources"]["limits"]["memory"] == "8Gi"
+
+    def test_build_crd_with_extended_resources_merged_into_limits(self):
+        """Test that extended_resources are merged into limits."""
+        config = HiveConfig(
+            organization_id="test-org",
+            runtime=RuntimeConfig(),
+            repo=RepoConfig(
+                source="https://github.com/test/repo.git",
+                evolve_files_and_ranges="main.py",
+            ),
+            sandbox=SandboxConfig(
+                base_image="custom-image:latest",
+                resources=ResourceConfig(
+                    cpu="2",
+                    memory="4Gi",
+                    extended_resources={
+                        "nvidia.com/gpu": "2",
+                        "ephemeral-storage": "50Gi",
+                    },
+                ),
+            ),
+        )
+
+        result = build_experiment_crd(config, "test-exp")
+
+        limits = result["spec"]["sandbox"]["resources"]["limits"]
+        assert limits["cpu"] == "2"
+        assert limits["memory"] == "4Gi"
+        assert limits["nvidia.com/gpu"] == "2"
+        assert limits["ephemeral-storage"] == "50Gi"
+
+    def test_build_crd_with_empty_prompt_values(self):
+        """Test building CRD with prompt config but empty values."""
+        config = HiveConfig(
+            organization_id="test-org",
+            runtime=RuntimeConfig(),
+            repo=RepoConfig(
+                source="https://github.com/test/repo.git",
+                evolve_files_and_ranges="main.py",
+            ),
+            sandbox=SandboxConfig(base_image="custom-image:latest"),
+            prompt=PromptConfig(enable_evolution=False),
+        )
+
+        result = build_experiment_crd(config, "test-exp")
+
+        assert "prompt" in result["spec"]
+        assert "context" not in result["spec"]["prompt"]
+        assert "ideas" not in result["spec"]["prompt"]
+        assert "enableEvolution" not in result["spec"]["prompt"]
+
+    def test_build_crd_experiment_name_in_metadata(self):
+        """Test that experiment name is correctly set in metadata."""
+        config = HiveConfig(
+            organization_id="test-org",
+            runtime=RuntimeConfig(),
+            repo=RepoConfig(
+                source="https://github.com/test/repo.git",
+                evolve_files_and_ranges="main.py",
+            ),
+            sandbox=SandboxConfig(base_image="custom-image:latest"),
+        )
+
+        result = build_experiment_crd(config, "my-custom-experiment-name")
+
+        assert result["metadata"]["name"] == "my-custom-experiment-name"
+
+    def test_build_crd_api_version_and_kind(self):
+        """Test that CRD has correct apiVersion and kind."""
+        config = HiveConfig(
+            organization_id="test-org",
+            runtime=RuntimeConfig(),
+            repo=RepoConfig(
+                source="https://github.com/test/repo.git",
+                evolve_files_and_ranges="main.py",
+            ),
+            sandbox=SandboxConfig(base_image="custom-image:latest"),
+        )
+
+        result = build_experiment_crd(config, "test-exp")
+
+        assert result["apiVersion"] == "core.hiverge.io/v1alpha1"
+        assert result["kind"] == "Experiment"
 
 
 class TestGenerateExperimentName:

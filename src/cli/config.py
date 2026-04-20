@@ -68,10 +68,6 @@ class SandboxConfig(BaseModel):
         default=None,
         description="Environment variables to set in the sandbox container.",
     )
-    secrets: Optional[list[KeyValueSet]] = Field(
-        default=None,
-        description="Secrets to set in the sandbox container.",
-    )
     timeout: int = 60
     resources: ResourceConfig = Field(
         default_factory=ResourceConfig,
