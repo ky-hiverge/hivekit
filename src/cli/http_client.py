@@ -137,6 +137,27 @@ class HttpClient:
         except requests.exceptions.RequestException as e:
             raise Exception(f"Failed to delete experiment: {e}") from e
 
+    def delete_experiments_batch(self, names: list[str]) -> Dict[str, Dict[str, Any]]:
+        """
+        Delete multiple experiments in batch.
+
+        Args:
+            names: List of experiment names to delete.
+
+        Returns:
+            Dictionary mapping experiment names to their deletion results.
+            Each result contains either 'success' or 'error' key.
+        """
+        results = {}
+        for name in names:
+            try:
+                # TODO: Consider implementing a batch delete endpoint in the backend to optimize this
+                response = self.delete_experiment(name)
+                results[name] = {"success": True, "response": response}
+            except Exception as e:
+                results[name] = {"success": False, "error": str(e)}
+        return results
+
     def _get_headers(self) -> Dict[str, str]:
         """
         Get common headers for all requests.

@@ -206,43 +206,69 @@ def create_experiment(args) -> None:
         console.print(f"[bold green]✓ Experiment '{experiment_name}' created successfully![/bold green]")
 
     except Exception as e:
-        console.print(f"\n[bold red]✗ Failed to create experiment:[/bold red] {e}")
-        console.print("\n[yellow]Troubleshooting tips:[/yellow]")
+        console.print(f"[bold red]✗ Failed to create experiment:[/bold red] {e}")
+        console.print("[yellow]Troubleshooting tips:[/yellow]")
         console.print("  • Ensure HIVE_API_ENDPOINT is set correctly")
         return
 
 
-def delete_experiment(args) -> None:
-    """Delete an experiment."""
+def delete_experiments(args) -> None:
+    """Delete one or more experiments."""
     console = Console()
 
-    experiment_name = args.name
+    experiment_names = args.name if isinstance(args.name, list) else [args.name]
 
-    console.print(f"\n[bold yellow]Deleting experiment:[/bold yellow] {experiment_name}")
+    if len(experiment_names) == 1:
+        console.print(f"[bold yellow]Deleting experiment:[/bold yellow] {experiment_names[0]}")
+    else:
+        console.print(f"[bold yellow]Deleting {len(experiment_names)} experiments:[/bold yellow]")
+        for name in experiment_names:
+            console.print(f"  • {name}")
 
-    # Confirm deletion unless -y flag is set
-    if not args.yes:
-        response = (
-            input(f"Are you sure you want to delete experiment '{experiment_name}'? (y/N): ")
-            .strip()
-            .lower()
-        )
+    # Confirm deletion for batch operations unless -y flag is set
+    # Single experiment deletions don't require confirmation
+    if len(experiment_names) > 1 and not args.yes:
+        prompt = f"Are you sure you want to delete these {len(experiment_names)} experiments? (y/N): "
+        response = input(prompt).strip().lower()
         if response not in ["y", "yes"]:
             console.print("[yellow]Deletion cancelled.[/yellow]")
             return
 
-    # Send request to delete experiment
-    console.print("\n[yellow]Sending delete request to backend server...[/yellow]")
     try:
         client = _get_http_client(args)
-        _ = client.delete_experiment(experiment_name)
-        console.print(f"[bold green]✓ Experiment '{experiment_name}' deleted successfully![/bold green]")
+
+        if len(experiment_names) == 1:
+            # Single experiment deletion
+            _ = client.delete_experiment(experiment_names[0])
+            console.print(f"[bold green]✓ Experiment '{experiment_names[0]}' deleted successfully![/bold green]")
+        else:
+            # Batch deletion
+            results = client.delete_experiments_batch(experiment_names)
+
+            # Display results
+            success_count = 0
+            failure_count = 0
+
+            for name, result in results.items():
+                if result["success"]:
+                    console.print(f"[bold green]✓[/bold green] {name} - deleted successfully")
+                    success_count += 1
+                else:
+                    console.print(f"[bold red]✗[/bold red] {name} - {result['error']}")
+                    failure_count += 1
+
+            # Summary
+            if failure_count == 0:
+                console.print(f"[bold green]All {success_count} experiments deleted successfully![/bold green]")
+            else:
+                console.print(f"[yellow]Completed with {success_count} successes and {failure_count} failures.[/yellow]")
 
     except Exception as e:
-        console.print(f"\n[bold red]✗ Failed to delete experiment:[/bold red] {e}")
-        console.print("\n[yellow]Troubleshooting tips:[/yellow]")
+        console.print(f"[bold red]✗ Failed to delete experiment:[/bold red] {e}")
+        console.print("[yellow]Troubleshooting tips:[/yellow]")
         console.print("  • Ensure HIVE_API_ENDPOINT is set correctly")
-        console.print(f"  • Verify the experiment '{experiment_name}' exists")
+        if len(experiment_names) == 1:
+            console.print(f"  • Verify the experiment '{experiment_names[0]}' exists")
         return
 
 
@@ -278,13 +304,12 @@ def list_experiments(args) -> None:
 
             table.add_row(name, str(num_agents), phase, created)
 
-        console.print("\n")
         console.print(table)
-        console.print(f"\n[dim]Total experiments:[/dim] {len(experiments)}")
+        console.print(f"[dim]Total experiments:[/dim] {len(experiments)}")
 
     except Exception as e:
-        console.print(f"\n[bold red]✗ Failed to list experiments:[/bold red] {e}")
-        console.print("\n[yellow]Troubleshooting tips:[/yellow]")
+        console.print(f"[bold red]✗ Failed to list experiments:[/bold red] {e}")
+        console.print("[yellow]Troubleshooting tips:[/yellow]")
         console.print("  • Ensure HIVE_API_ENDPOINT is set correctly")
         return
 
@@ -295,7 +320,7 @@ def get_experiment(args) -> None:
 
     experiment_name = args.name
 
-    console.print(f"\n[bold cyan]Getting experiment:[/bold cyan] {experiment_name}")
+    console.print(f"[bold cyan]Getting experiment:[/bold cyan] {experiment_name}")
 
     try:
         client = _get_http_client(args)
@@ -306,7 +331,7 @@ def get_experiment(args) -> None:
         status = exp.get("status", {})
 
         # Display metadata
-        console.print("\n[bold magenta]Metadata:[/bold magenta]")
+        console.print("[bold magenta]Metadata:[/bold magenta]")
         console.print(f"  [cyan]Name:[/cyan] {metadata.get('name', 'N/A')}")
         console.print(f"  [cyan]UID:[/cyan] {metadata.get('uid', 'N/A')}")
         console.print(f"  [cyan]Created:[/cyan] {metadata.get('creationTimestamp', 'N/A')}")
@@ -318,7 +343,7 @@ def get_experiment(args) -> None:
                 console.print(f"    {key}: {value}")
 
         # Display spec
-        console.print("\n[bold magenta]Spec:[/bold magenta]")
+        console.print("[bold magenta]Spec:[/bold magenta]")
         runtime = spec.get("runtime", {})
         console.print("  [cyan]Runtime:[/cyan]")
         console.print(f"    Agents: {runtime.get('numAgents', 'N/A')}")
@@ -341,12 +366,12 @@ def get_experiment(args) -> None:
             console.print(f"      Memory: {resources.get('memory', 'N/A')}")
 
         # Display status
-        console.print("\n[bold magenta]Status:[/bold magenta]")
+        console.print("[bold magenta]Status:[/bold magenta]")
         console.print(f"  [cyan]Phase:[/cyan] {status.get('phase', 'Unknown')}")
 
     except Exception as e:
-        console.print(f"\n[bold red]✗ Failed to get experiment:[/bold red] {e}")
-        console.print("\n[yellow]Troubleshooting tips:[/yellow]")
+        console.print(f"[bold red]✗ Failed to get experiment:[/bold red] {e}")
+        console.print("[yellow]Troubleshooting tips:[/yellow]")
         console.print("  • Ensure HIVE_API_ENDPOINT is set correctly")
         console.print(f"  • Verify the experiment '{experiment_name}' exists")
         return
@@ -468,10 +493,10 @@ def main():
     parser_delete = subparsers.add_parser("delete", help="Delete resources")
     delete_subparsers = parser_delete.add_subparsers(dest="delete_target")
     parser_delete_exp = delete_subparsers.add_parser(
-        "experiment", aliases=["exp"], help="Delete an experiment"
+        "experiment", aliases=["exp", "exp"], help="Delete one or more experiments"
     )
     parser_delete_exp.add_argument(
-        "name", help="Name of the experiment"
+        "name", nargs="+", help="Name(s) of the experiment(s) to delete"
     ).completer = experiment_completer
     parser_delete_exp.add_argument(
         "-y",
@@ -485,7 +510,7 @@ def main():
         default=os.path.expandvars("$HOME/.hive/config.yaml"),
         help="Path to the config file, default to ~/.hive/config.yaml",
     ).completer = config_file_completer
-    parser_delete_exp.set_defaults(func=delete_experiment)
+    parser_delete_exp.set_defaults(func=delete_experiments)
 
     # list command
     parser_list = subparsers.add_parser("list", help="List resources")

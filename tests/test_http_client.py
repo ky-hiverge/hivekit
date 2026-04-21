@@ -364,6 +364,76 @@ class TestHttpClientDeleteExperiment:
             http_client.delete_experiment("test-exp")
 
 
+class TestHttpClientDeleteExperimentsBatch:
+    """
+    Tests for the `delete_experiments_batch` method.
+    """
+
+    def test_delete_experiments_batch_all_success(
+        self, http_client: HttpClient, mock_session: MagicMock
+    ) -> None:
+        """
+        Test successful batch deletion of multiple experiments.
+        """
+        # given
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"message": "Deleted"}
+        mock_session.request.return_value = mock_response
+
+        # when
+        results = http_client.delete_experiments_batch(["exp1", "exp2", "exp3"])
+
+        # then
+        assert len(results) == 3
+        assert results["exp1"]["success"] is True
+        assert results["exp2"]["success"] is True
+        assert results["exp3"]["success"] is True
+        assert mock_session.request.call_count == 3
+
+    def test_delete_experiments_batch_partial_failure(
+        self, http_client: HttpClient, mock_session: MagicMock
+    ) -> None:
+        """
+        Test batch deletion with some failures.
+        """
+        # given
+        mock_success = MagicMock()
+        mock_success.status_code = 200
+        mock_success.json.return_value = {"message": "Deleted"}
+
+        # First experiment succeeds, second fails, third succeeds
+        mock_session.request.side_effect = [
+            mock_success,
+            requests.exceptions.RequestException("Not found"),
+            mock_success,
+        ]
+
+        # when
+        results = http_client.delete_experiments_batch(["exp1", "exp2", "exp3"])
+
+        # then
+        assert len(results) == 3
+        assert results["exp1"]["success"] is True
+        assert results["exp2"]["success"] is False
+        assert "Not found" in results["exp2"]["error"]
+        assert results["exp3"]["success"] is True
+        assert mock_session.request.call_count == 3
+
+    def test_delete_experiments_batch_empty_list(
+        self, http_client: HttpClient, mock_session: MagicMock
+    ) -> None:
+        """
+        Test batch deletion with empty list.
+        """
+        # when
+        results = http_client.delete_experiments_batch([])
+
+        # then
+        assert len(results) == 0
+        mock_session.request.assert_not_called()
+
+
 class TestAuthenticationHandling:
     """
     Tests for 401 authentication error handling in the `HttpClient`.
