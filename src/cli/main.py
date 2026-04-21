@@ -223,7 +223,7 @@ def delete_experiments(args) -> None:
     else:
         console.print(f"[bold yellow]Deleting {len(experiment_names)} experiments:[/bold yellow]")
         for name in experiment_names:
-            console.print(f"  • {name}")
+            console.print(f"• {name}")
 
     # Confirm deletion for batch operations unless -y flag is set
     # Single experiment deletions don't require confirmation
